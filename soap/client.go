@@ -49,6 +49,7 @@ type Client struct {
 	ContentType            string              // Optional Content-Type (default text/xml)
 	Config                 *http.Client        // Optional HTTP client
 	Pre                    func(*http.Request) // Optional hook to modify outbound requests
+	SoapAction             string
 }
 
 type XMLTyper interface {
@@ -93,7 +94,7 @@ func doRoundTrip(c *Client, setHeaders func(*http.Request), in, out Message) err
 		NSAttr:       c.Namespace,
 		XSIAttr:      XSINamespace,
 		Header:       c.Header,
-		Body:         Body{Message: in},
+		Body:         in,
 	}
 
 	if req.EnvelopeAttr == "" {
@@ -149,7 +150,7 @@ func (c *Client) RoundTrip(in, out Message) error {
 			if c.ExcludeActionNamespace {
 				actionName = soapAction
 			} else {
-				actionName = fmt.Sprintf("%s/%s", c.Namespace, soapAction)
+				actionName = fmt.Sprintf("%s/%s", c.SoapAction, soapAction)
 			}
 			r.Header.Add("SOAPAction", actionName)
 		}
@@ -170,7 +171,7 @@ func (c *Client) RoundTripWithAction(soapAction string, in, out Message) error {
 			if c.ExcludeActionNamespace {
 				actionName = soapAction
 			} else {
-				actionName = fmt.Sprintf("%s/%s", c.Namespace, soapAction)
+				actionName = fmt.Sprintf("%s/%s", c.SoapAction, soapAction)
 			}
 			r.Header.Add("SOAPAction", actionName)
 		}
@@ -187,12 +188,12 @@ func (c *Client) RoundTripSoap12(action string, in, out Message) error {
 
 // Envelope is a SOAP envelope.
 type Envelope struct {
-	XMLName      xml.Name `xml:"SOAP-ENV:Envelope"`
-	EnvelopeAttr string   `xml:"xmlns:SOAP-ENV,attr"`
-	NSAttr       string   `xml:"xmlns:ns,attr"`
-	XSIAttr      string   `xml:"xmlns:xsi,attr,omitempty"`
-	Header       Message  `xml:"SOAP-ENV:Header"`
-	Body         Body
+	XMLName      xml.Name    `xml:"SOAP-ENV:Envelope"`
+	EnvelopeAttr string      `xml:"xmlns:SOAP-ENV,attr"`
+	NSAttr       string      `xml:"xmlns:ns,attr"`
+	XSIAttr      string      `xml:"xmlns:xsi,attr,omitempty"`
+	Header       Message     `xml:"SOAP-ENV:Header"`
+	Body         interface{} `xml:"SOAP-ENV:Body"`
 }
 
 // Body is the body of a SOAP envelope.
