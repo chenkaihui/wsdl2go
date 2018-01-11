@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"reflect"
+	"time"
 )
-
-const XSINamespace = "http://www.w3.org/2001/XMLSchema-instance"
 
 var XMLTyperType reflect.Type = reflect.TypeOf((*XMLTyper)(nil)).Elem()
 
@@ -50,6 +50,9 @@ type Client struct {
 	Config                 *http.Client        // Optional HTTP client
 	Pre                    func(*http.Request) // Optional hook to modify outbound requests
 	SoapAction             string
+	XSINamespace           string
+	ConnectTimeout         time.Duration
+	ReadWriteTimeout       time.Duration
 }
 
 type XMLTyper interface {
@@ -92,7 +95,7 @@ func doRoundTrip(c *Client, setHeaders func(*http.Request), in, out Message) err
 	req := &Envelope{
 		EnvelopeAttr: c.Envelope,
 		NSAttr:       c.Namespace,
-		XSIAttr:      XSINamespace,
+		XSIAttr:      c.XSINamespace,
 		Header:       c.Header,
 		Body:         in,
 	}
@@ -132,6 +135,31 @@ func doRoundTrip(c *Client, setHeaders func(*http.Request), in, out Message) err
 		return fmt.Errorf("%q: %q", resp.Status, body)
 	}
 	return xml.NewDecoder(resp.Body).Decode(out)
+}
+
+func (c *Client) newHttpClient() *http.Client {
+	if c.ConnectTimeout == 0 || c.ReadWriteTimeout == 0 {
+		return http.DefaultClient
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			Dial: timeoutDialer(c.ConnectTimeout, c.ReadWriteTimeout),
+		},
+	}
+	return client
+}
+
+func timeoutDialer(cTimeout, rwTimeout time.Duration) func(network, addr string) (c net.Conn, err error) {
+	return func(netw, addr string) (net.Conn, error) {
+		conn, err := net.DialTimeout(netw, addr, cTimeout)
+		if err != nil {
+			return nil, err
+		}
+
+		err = conn.SetDeadline(time.Now().Add(rwTimeout))
+		return conn, err
+	}
 }
 
 // RoundTrip implements the RoundTripper interface.
@@ -194,10 +222,4 @@ type Envelope struct {
 	XSIAttr      string      `xml:"xmlns:xsi,attr,omitempty"`
 	Header       Message     `xml:"SOAP-ENV:Header"`
 	Body         interface{} `xml:"SOAP-ENV:Body"`
-}
-
-// Body is the body of a SOAP envelope.
-type Body struct {
-	XMLName xml.Name `xml:"SOAP-ENV:Body"`
-	Message Message
 }
